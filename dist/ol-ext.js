@@ -17714,7 +17714,7 @@ ol.control.WMTSCapabilities.prototype.getOptionsFromCap = function(caps, parent)
     delete layer_opt.source;
   }
   var returnedLegend=undefined;
-  if(caps.Style && caps.Style[0].LegendURL[0] )
+  if(caps.Style && caps.Style[0] && caps.Style[0].LegendURL && caps.Style[0].LegendURL[0] )
     returnedLegend=caps.Style[0].LegendURL[0].href;
   return ({ 
     layer: layer_opt, 
@@ -35483,9 +35483,16 @@ ol.geom.LineString.prototype.splitAt = function(pt, tol) {
           d1 = (c0[i][0]-pt[0]) / (c0[i][0]-c0[i+1][0]);
           split = (c0[i][1] == pt[1]) && (0 < d1 && d1 <= 1)
         } else {
-          d1 = (c0[i][0]-pt[0]) / (c0[i][0]-c0[i+1][0]);
-          d2 = (c0[i][1]-pt[1]) / (c0[i][1]-c0[i+1][1]);
-          split = (Math.abs(d1-d2) <= tol && 0 < d1 && d1 <= 1)
+          // d1 = (c0[i][0]-pt[0]) / (c0[i][0]-c0[i+1][0]);
+          // d2 = (c0[i][1]-pt[1]) / (c0[i][1]-c0[i+1][1]);
+          // split = (Math.abs(d1-d2) <= tol && 0 < d1 && d1 <= 1)
+          /**
+           * Glavina: switch to slower but more responsive version
+           */
+          var toleranceOffset = 0.001;
+          var total = ol.coordinate.dist2d(c0[i], c0[i+1]);
+          var sum = ol.coordinate.dist2d(c0[i], pt) + ol.coordinate.dist2d(pt, c0[i+1]);
+          split = Math.abs(sum - total) < toleranceOffset;
         }
         // pt is inside the segment > split
         if (split) {
