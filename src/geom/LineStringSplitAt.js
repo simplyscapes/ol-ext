@@ -1,4 +1,4 @@
-import {ol_coordinate_equal} from "./GeomUtils";
+import {ol_coordinate_equal, ol_coordinate_dist2d} from "./GeomUtils";
 import ol_geom_LineString from "ol/geom/LineString";
 
 /** Split a lineString by a point or a list of points
@@ -51,9 +51,19 @@ ol_geom_LineString.prototype.splitAt = function(pt, tol) {
           d1 = (c0[i][0]-pt[0]) / (c0[i][0]-c0[i+1][0]);
           split = (c0[i][1] == pt[1]) && (0 < d1 && d1 <= 1)
         } else {
-          d1 = (c0[i][0]-pt[0]) / (c0[i][0]-c0[i+1][0]);
-          d2 = (c0[i][1]-pt[1]) / (c0[i][1]-c0[i+1][1]);
-          split = (Math.abs(d1-d2) <= tol && 0 < d1 && d1 <= 1)
+          // d1 = (c0[i][0]-pt[0]) / (c0[i][0]-c0[i+1][0]);
+          // d2 = (c0[i][1]-pt[1]) / (c0[i][1]-c0[i+1][1]);
+          // split = (Math.abs(d1-d2) <= tol && 0 < d1 && d1 <= 1)
+
+          /**
+           * Glavina: switch to slower but more responsive version
+           */
+
+          var toleranceOffset = 0.001;
+          var total = ol_coordinate_dist2d(c0[i], c0[i+1]);
+          var sum = ol_coordinate_dist2d(c0[i], pt) + ol_coordinate_dist2d(pt, c0[i+1]);
+
+          split = Math.abs(sum - total) < toleranceOffset;
         }
         // pt is inside the segment > split
         if (split) {
