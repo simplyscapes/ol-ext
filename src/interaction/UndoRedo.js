@@ -345,7 +345,7 @@ ol_interaction_UndoRedo.prototype._onInteraction.modifystart = function (e) {
   /**
    * NG: Do not add changegeometry event if event is virtual
    */
-  if(e.originalEvent.isVirtual) {
+  if(e.originalEvent && e.originalEvent.isVirtual) {
     return;
   }
 

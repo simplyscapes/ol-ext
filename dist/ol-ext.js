@@ -28060,6 +28060,12 @@ ol.interaction.UndoRedo.prototype._onInteraction.rotatestart =
 ol.interaction.UndoRedo.prototype._onInteraction.translatestart = 
 ol.interaction.UndoRedo.prototype._onInteraction.scalestart = 
 ol.interaction.UndoRedo.prototype._onInteraction.modifystart = function (e) {
+  /**
+   * NG: Do not add changegeometry event if event is virtual
+   */
+  if(e.originalEvent && e.originalEvent.isVirtual) {
+    return;
+  }
   this.blockStart(e.type.replace(/start$/,''));
   e.features.forEach(function(m) {
     this._undoStack.push({ 
