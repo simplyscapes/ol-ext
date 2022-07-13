@@ -342,6 +342,13 @@ ol_interaction_UndoRedo.prototype._onInteraction.rotatestart =
 ol_interaction_UndoRedo.prototype._onInteraction.translatestart = 
 ol_interaction_UndoRedo.prototype._onInteraction.scalestart = 
 ol_interaction_UndoRedo.prototype._onInteraction.modifystart = function (e) {
+  /**
+   * NG: Do not add changegeometry event if event is virtual
+   */
+  if(e.originalEvent.isVirtual) {
+    return;
+  }
+
   this.blockStart(e.type.replace(/start$/,''));
   e.features.forEach(function(m) {
     this._undoStack.push({ 
