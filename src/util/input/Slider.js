@@ -77,12 +77,13 @@ var ol_ext_input_Slider = function(options) {
   var min = (options.min !== undefined) ? options.min : parseFloat(input.min) || 0;
   var max = (options.max !== undefined) ? options.max : parseFloat(input.max) || 1;
   var step = (options.step !== undefined) ? options.step : parseFloat(input.step) || 1;
-
+  var dstep = 1/step;
+  
   // Handle popup drag
   this._listenDrag(slider, function(e) {
     var tx = Math.max(0, Math.min(e.offsetX / slider.clientWidth, 1));
     cursor.style.left = Math.max(0, Math.min(100, Math.round(tx*100) )) + '%';
-    var v = input.value = Math.round((tx * (max - min) + min) / step) * step;
+    var v = input.value = Math.round((tx * (max - min) + min) * dstep) / dstep;
     this.dispatchEvent({ type: 'change:value', value: v });
   }.bind(this));
 
