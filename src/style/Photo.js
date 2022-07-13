@@ -24,16 +24,18 @@ import ol_style_Fill from 'ol/style/Fill'
  *  @param {ol_style_Stroke} options.stroke
  *  @param {String} options.src image src
  *  @param {String} options.crossOrigin The crossOrigin attribute for loaded images. Note that you must provide a crossOrigin value if you want to access pixel data with the Canvas renderer.
- *  @param {Number} options.offsetX Horizontal offset in pixels. Default is 0.
- *  @param {Number} options.offsetY Vertical offset in pixels. Default is 0.
- *  @param {function} options.onload callback when image is loaded (to redraw the layer)
+ *  @param {Array<number>} [options.displacement] to use with ol > 6
+ * 	@param {number} [options.offsetX=0] Horizontal offset in pixels, deprecated use displacement with ol>6
+ * 	@param {number} [options.offsetY=0] Vertical offset in pixels, deprecated use displacement with ol>6
+ *  @param {function} [options.onload] callback when image is loaded (to redraw the layer)
  * @extends {ol_style_RegularShape}
  * @implements {ol.structs.IHasChecksum}
  * @api
  */
 var ol_style_Photo = function(options) {
   options = options || {};
-  this.sanchor_ = options.kind=="anchored" ? 8:0;
+  if (!options.displacement) options.displacement = [options.offsetX || 0, -options.offsetY || 0]
+  this.sanchor_ = (options.kind==="anchored" ? 8 : 0);
   this._shadow = (Number(options.shadow) || 0);
   if (!options.stroke) {
     options.stroke = new ol_style_Stroke({ width: 0, color: "#000"})
@@ -45,12 +47,13 @@ var ol_style_Photo = function(options) {
   ol_style_RegularShape.call (this, {
     radius: options.radius + strokeWidth + this.sanchor_/2 + this._shadow/2, 
     points: 0,
+    displacement: [ options.displacement[0] || 0, (options.displacement[1] || 0) + this.sanchor_],
     // No fill to create a hit detection Image (v5) or transparent (v6) 
     fill: ol_style_RegularShape.prototype.render ? new ol_style_Fill({ color: [0,0,0,0] }) : null
   });
   // Hack to get the hit detection Image (v4.6.5 ?)
   if (!this.getHitDetectionImage) {
-    var img = this.getImage();
+    var img = ol_style_RegularShape.prototype.getImage.call(this);
     if (!this.hitDetectionCanvas_) {
       for (var i in this) {
         if (this[i] && this[i].getContext && this[i]!==img) {
@@ -67,6 +70,8 @@ var ol_style_Photo = function(options) {
     this.getHitDetectionImage = function() {
       return hit;
     }
+    // Calculate image
+    setTimeout(function() { this.getImage(); }.bind(this))
   }
 
   this._stroke = options.stroke;
@@ -84,8 +89,6 @@ var ol_style_Photo = function(options) {
 
   if (typeof(options.opacity)=='number') this.setOpacity(options.opacity);
   if (typeof(options.rotation)=='number') this.setRotation(options.rotation);
-
-  this.renderPhoto_();
 };
 ol_ext_inherits(ol_style_Photo, ol_style_RegularShape);
 
@@ -94,7 +97,7 @@ ol_ext_inherits(ol_style_Photo, ol_style_RegularShape);
  */
 ol_style_Photo.prototype.setOffset = function(offset) {
   this._offset = [offset[0]||0, offset[1]||0];
-  this.renderPhoto_();
+  this.getImage();
 };
 
 /**
@@ -116,7 +119,7 @@ ol_style_Photo.prototype.clone = function() {
     opacity: this.getOpacity(),
     rotation: this.getRotation()
   });
-  i.renderPhoto_();
+  i.getImage();
   return i;
 };
 
@@ -211,18 +214,15 @@ ol_style_Photo.prototype.drawBack_ = function(context, color, strokeWidth, pixel
 };
 
 /**
- * @private
+ * Get the image icon.
+ * @param {number} pixelRatio Pixel ratio.
+ * @return {HTMLCanvasElement} Image or Canvas element.
+ * @api
  */
-ol_style_Photo.prototype.renderPhoto_ = function(pixelratio) {
-  if (!pixelratio) {
-    if (this.getPixelRatio) {
-      pixelratio = window.devicePixelRatio;
-      this.renderPhoto_(pixelratio);
-    } else {
-      this.renderPhoto_(1);
-    }
-    return;
-  }
+ol_style_Photo.prototype.getImage = function(pixelratio) {
+  pixelratio = pixelratio || 1;
+  var canvas = ol_style_RegularShape.prototype.getImage.call(this, pixelratio);
+  if (this._gethit) return canvas;
 
   var strokeStyle;
   var strokeWidth = 0;
@@ -230,15 +230,16 @@ ol_style_Photo.prototype.renderPhoto_ = function(pixelratio) {
     strokeStyle = ol_color_asString(this._stroke.getColor());
     strokeWidth = this._stroke.getWidth();
   }
-  var canvas = this.getImage(pixelratio);
 
   // Draw hitdetection image
-  var context = this.getHitDetectionImage().getContext('2d');
-  context.save();
-  context.setTransform(1,0,0,1,0,0)
-  this.drawBack_(context,"#000",strokeWidth, 1);
-  context.fill();
-  context.restore();
+  this._gethit = true;
+    var context = this.getHitDetectionImage().getContext('2d');
+    context.save();
+    context.setTransform(1,0,0,1,0,0)
+    this.drawBack_(context, "#000", strokeWidth, 1);
+    context.fill();
+    context.restore();
+  this._gethit = false;
 
   // Draw the image
   context = canvas.getContext('2d');
@@ -263,34 +264,35 @@ ol_style_Photo.prototype.renderPhoto_ = function(pixelratio) {
   
   // Draw image
   if (img.width) {
-    self.drawImage_(img);
+    self.drawImage_(canvas, img, pixelratio);
   } else {
     img.onload = function() {
-      self.drawImage_(img);
+      self.drawImage_(canvas, img, pixelratio);
       // Force change (?!)
       // self.setScale(1);
       if (self._onload) self._onload();
     };
   }
   
-  // Set anchor
-  var a = this.getAnchor();
-  a[0] = (canvas.width/pixelratio - this._shadow)/2  - this._offset[0];
-  if (this.sanchor_) {
-    a[1] = canvas.height/pixelratio - this._shadow - this._offset[1];
-  } else {
-    a[1] = (canvas.height/pixelratio - this._shadow)/2 - this._offset[1];
+  // Set anchor (ol < 6)
+  if (!this.getDisplacement) {
+    var a = this.getAnchor();
+    a[0] = (canvas.width/pixelratio - this._shadow)/2  - this._offset[0];
+    if (this.sanchor_) {
+      a[1] = canvas.height/pixelratio - this._shadow - this._offset[1];
+    } else {
+      a[1] = (canvas.height/pixelratio - this._shadow)/2 - this._offset[1];
+    }
   }
+
+  return canvas;
 };
 
 /**
  * Draw an timage when loaded
  * @private
  */
-ol_style_Photo.prototype.drawImage_ = function(img) {
-  var pixelratio = window.devicePixelRatio;
-
-  var canvas = this.getImage(pixelratio);
+ol_style_Photo.prototype.drawImage_ = function(canvas, img, pixelratio) {
   // Remove the circle on the canvas
   var context = (canvas.getContext('2d'));
 

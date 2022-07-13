@@ -1,7 +1,7 @@
 /**
  * ol-ext - A set of cool extensions for OpenLayers (ol) in node modules structure
  * @description ol3,openlayers,popup,menu,symbol,renderer,filter,canvas,interaction,split,statistic,charts,pie,LayerSwitcher,toolbar,animation
- * @version v3.2.25
+ * @version v3.2.28
  * @author Jean-Marc Viglino
  * @see https://github.com/Viglino/ol-ext#,
  * @license BSD-3-Clause
@@ -715,7 +715,6 @@ ol.ext.element.createCheck = function (options) {
     on: options.on,
     parent: options.parent
   });
-  console.log(input)
   var opt = Object.assign ({ input: input }, options || {});
   if (options.type === 'radio') {
     new ol.ext.input.Radio(opt);
@@ -2117,6 +2116,7 @@ ol.ext.inherits(ol.ext.input.Base, ol.Object);
 ol.ext.input.Base.prototype._listenDrag = function(elt, cback) {
   var handle = function(e) {
     this.moving = true;
+    this.element.classList.add('ol-moving');
     var listen = function(e) {
       if (e.type==='pointerup') {
         document.removeEventListener('pointermove', listen);
@@ -2124,6 +2124,7 @@ ol.ext.input.Base.prototype._listenDrag = function(elt, cback) {
         document.removeEventListener('pointercancel', listen);
         setTimeout(function() {
           this.moving = false;
+          this.element.classList.remove('ol-moving');
         }.bind(this));
       }
       if (e.target === elt) cback(e);
@@ -2141,7 +2142,7 @@ ol.ext.input.Base.prototype._listenDrag = function(elt, cback) {
 };
 /** Set the current value
  */
- ol.ext.input.Base.prototype.setValue = function(v) {
+ol.ext.input.Base.prototype.setValue = function(v) {
   if (v !== undefined) this.input.value = v;
   this.input.dispatchEvent(new Event('change'));
 };
@@ -2228,11 +2229,12 @@ ol.ext.input.Slider = function(options) {
   var min = (options.min !== undefined) ? options.min : parseFloat(input.min) || 0;
   var max = (options.max !== undefined) ? options.max : parseFloat(input.max) || 1;
   var step = (options.step !== undefined) ? options.step : parseFloat(input.step) || 1;
+  var dstep = 1/step;
   // Handle popup drag
   this._listenDrag(slider, function(e) {
     var tx = Math.max(0, Math.min(e.offsetX / slider.clientWidth, 1));
     cursor.style.left = Math.max(0, Math.min(100, Math.round(tx*100) )) + '%';
-    var v = input.value = Math.round((tx * (max - min) + min) / step) * step;
+    var v = input.value = Math.round((tx * (max - min) + min) * dstep) / dstep;
     this.dispatchEvent({ type: 'change:value', value: v });
   }.bind(this));
   // Set value
@@ -2540,7 +2542,6 @@ ol.ext.input.Collection.prototype.refresh = function() {
 /** Color picker
  * @constructor
  * @extends {ol.ext.input.PopupBase}
- * @fires change:color
  * @fires color
  * @param {*} options
  *  @param {string} [options.className]
@@ -3001,6 +3002,140 @@ ol.ext.inherits(ol.ext.input.Radio, ol.ext.input.Checkbox);
 
 /** Checkbox input
  * @constructor
+ * @extends {ol.ext.input.Base}
+ * @fires change:value
+ * @param {*} options
+ *  @param {string} [options.className]
+ *  @param {Element} [options.input] input element, if non create one (use parent to tell where)
+ *  @param {Element} [options.input2] input element
+ *  @param {Element} [options.parent] element to use as parent if no input option
+ *  @param {number} [options.min] min value, default use input min
+ *  @param {number} [options.max] max value, default use input max
+ *  @param {number} [options.step] step value, default use input step
+ *  @param {boolean} [options.overflow=false] enable values over min/max
+ */
+ol.ext.input.Range = function(options) {
+  options = options || {};
+  ol.ext.input.Base.call(this, options);
+  this.set('overflow', !!options.overflow);
+  this.element = ol.ext.element.create('DIV', {
+    className: 'ol-input-slider ol-input-range' 
+      + (options.className ? ' ' + options.className : '')
+  });
+  var input = this.input;
+  if (input.parentNode) input.parentNode.insertBefore(this.element, input);
+  this.element.appendChild(input);
+  // Slider
+  var slider = this.slider = ol.ext.element.create('DIV', {
+    className: 'ol-slider',
+    parent: this.element
+  });
+  var back = ol.ext.element.create('DIV', {
+    className: 'ol-back',
+    parent: this.slider
+  })
+  var input2 = this.input2 = options.input2;
+  if(input2) this.element.appendChild(input2);
+  // Cursors
+  var cursor = ol.ext.element.create('DIV', {
+    className: 'ol-cursor',
+    parent: slider
+  })
+  var cursor2 = ol.ext.element.create('DIV', {
+    className: 'ol-cursor',
+    parent: input2 ? slider : undefined
+  })
+  var currentCursor = cursor;
+  function setCursor(e) {
+    currentCursor = e.target;
+  }
+  cursor.addEventListener('mousedown', setCursor, false);
+  cursor.addEventListener('touchstart', setCursor, false);
+  cursor2.addEventListener('mousedown', setCursor, false);
+  cursor2.addEventListener('touchstart', setCursor, false);
+  var min = (options.min !== undefined) ? options.min : parseFloat(input.min) || 0;
+  var max = (options.max !== undefined) ? options.max : parseFloat(input.max) || 1;
+  var step = (options.step !== undefined) ? options.step : parseFloat(input.step) || 1;
+  var dstep = 1/step;
+  function setRange() {
+    // range
+    if (input2) {
+      var l1 = parseFloat(cursor.style.left) || 0;
+      var l2 = parseFloat(cursor2.style.left) || 0;
+      back.style.left = Math.min(l1, l2) + '%';
+      back.style.right = (100 - Math.max(l1, l2)) + '%';
+    } else {
+      back.style.left = 0;
+      back.style.right = (100 - parseFloat(cursor.style.left) || 0) + '%';
+    }
+  }
+  function checkMinMax() {
+    if (input2 && parseFloat(input.value) > parseFloat(input2.value)) {
+      var v = input.value;
+      input.value = input2.value;
+      input2.value = v;
+      setValue({ target: input });
+      if (input2) setValue({ target: input2 });
+    }
+  }
+  // Handle popup drag
+  this._listenDrag(slider, function(e) {
+    var current = (currentCursor===cursor ? input : input2);
+    var tx = Math.max(0, Math.min(e.offsetX / slider.clientWidth, 1));
+    currentCursor.style.left = Math.max(0, Math.min(100, Math.round(tx*100) )) + '%';
+    var v = current.value = Math.round((tx * (max - min) + min) * dstep) / dstep;
+    setRange();
+    this.dispatchEvent({ type: 'change:value', value: v });
+    if (e.type==='pointerup') {
+      checkMinMax();
+    }
+  }.bind(this));
+  // Set value
+  var setValue = function(e) {
+    var current = e.target;
+    var curs = (current===input ? cursor : cursor2);
+    var v = parseFloat(current.value) || 0;
+    if (!this.get('overflow')) v = Math.max(min, Math.min(max, v));
+    if (v != current.value) current.value = v;
+    var tx = (v - min) / (max - min);
+    curs.style.left = Math.max(0, Math.min(100, Math.round(tx*100) )) + '%';
+    setRange();
+    this.dispatchEvent({ type: 'change:value', value: v });
+    checkMinMax();
+  }.bind(this);
+  input.addEventListener('change', setValue);
+  if (input2) input2.addEventListener('change', setValue);
+  setValue({ target: input });
+  if (input2) setValue({ target: input2 });
+};
+ol.ext.inherits(ol.ext.input.Range, ol.ext.input.Base);
+/** Set the current value (second input)
+ */
+ol.ext.input.Range.prototype.setValue2 = function(v) {
+  if (!this.input2) return;
+  if (v !== undefined) this.input2.value = v;
+  this.input2.dispatchEvent(new Event('change'));
+};
+/** Get the current value (second input)
+ */
+ol.ext.input.Range.prototype.getValue2 = function() {
+  return this.input2 ? this.input2.value : null;
+}
+/** Get the current min value
+ * @return {number}
+ */
+ol.ext.input.Range.prototype.getMin = function() {
+  return parseFloat(this.getValue());
+}
+/** Get the current max value
+ * @return {number}
+ */
+ol.ext.input.Range.prototype.getMax = function() {
+  return parseFloat(this.getValue2());
+}
+
+/** Checkbox input
+ * @constructor
  * @extends {ol.ext.input.List}
  * @param {*} options
  *  @param {string} [options.className]
@@ -3376,7 +3511,7 @@ ol.legend.Legend.getLegendImage = function(item, canvas, row) {
   };
   var width = size[0] + 2 * item.margin;
   var height = item.lineHeight || (size[1] + 2 * item.margin);
-  var ratio = ol.has.DEVICE_PIXEL_RATIO;
+  var ratio = item.pixelratio || ol.has.DEVICE_PIXEL_RATIO;
   if (!canvas) {
     row = 0;
     canvas = document.createElement('canvas');
@@ -3455,26 +3590,39 @@ ol.legend.Legend.getLegendImage = function(item, canvas, row) {
   cy += (row*height) || 0;
   for (i=0; s= style[i]; i++) {
     vectorContext.setStyle(s);
+    ctx.save();
+    var geom;
     switch (typeGeom) {
       case ol.geom.Point:
       case 'Point':
-      case 'MultiPoint':
-        vectorContext.drawGeometry(new ol.geom.Point([cx, cy]));
+      case 'MultiPoint': {
+        geom = new ol.geom.Point([cx, cy]);
         break;
+      }
       case ol.geom.LineString:
       case 'LineString':
-      case 'MultiLineString': 
-        ctx.save();
-          ctx.rect(item.margin * ratio, 0, size[0] *  ratio, canvas.height);
-          ctx.clip();
-          vectorContext.drawGeometry(new ol.geom.LineString([[cx-sx, cy], [cx+sx, cy]]));
-        ctx.restore();
+      case 'MultiLineString': {
+        // Clip lines
+        ctx.rect(item.margin * ratio, 0, size[0] *  ratio, canvas.height);
+        ctx.clip();
+        geom = new ol.geom.LineString([[cx-sx, cy], [cx+sx, cy]]);
         break;
+      }
       case ol.geom.Polygon:
       case 'Polygon':
-      case 'MultiPolygon': 
-        vectorContext.drawGeometry(new ol.geom.Polygon([[[cx-sx, cy-sy], [cx+sx, cy-sy], [cx+sx, cy+sy], [cx-sx, cy+sy], [cx-sx, cy-sy]]]));
+      case 'MultiPolygon': {
+        geom = new ol.geom.Polygon([[[cx-sx, cy-sy], [cx+sx, cy-sy], [cx+sx, cy+sy], [cx-sx, cy+sy], [cx-sx, cy-sy]]]);
         break;
+      }
+    }
+    // Geometry function?
+    if (s.getGeometryFunction()) {
+      geom = s.getGeometryFunction()(new ol.Feature(geom));
+      ctx.restore();
+      vectorContext.drawGeometry(geom);
+    } else {
+      vectorContext.drawGeometry(geom);
+      ctx.restore();
     }
   }
   ctx.restore();
@@ -8825,14 +8973,14 @@ ol.control.Imageline.prototype.setMap = function (map) {
 	}
 };
 /** Set layers to use in the control
- * @param {Array<ol.Layer} layers
+ * @param {Array<ol.Layer>} layers
  */
 ol.control.Imageline.prototype.setLayers = function (layers) {
   this._sources = this._getSources(layers);
 };
 /** Get source from a set of layers
- * @param {Array<ol.Layer} layers
- * @returns {Array<ol.source.Vector}
+ * @param {Array<ol.Layer>} layers
+ * @returns {Array<ol.source.Vector>}
  * @private
  */
 ol.control.Imageline.prototype._getSources = function (layers) {
@@ -9385,8 +9533,8 @@ ol.control.IsochroneGeoportail.prototype._error = function() {
  */
 ol.control.LayerPopup = function(options) {
   options = options || {};
-	options.switcherClass="ol-layerswitcher-popup";
-	if (options.mouseover!==false) options.mouseover=true;
+	options.switcherClass = 'ol-layerswitcher-popup' + (options.switcherClass ? ' ' + options.switcherClass : '');
+	if (options.mouseover!==false) options.mouseover = true;
 	ol.control.LayerSwitcher.call(this, options);
 };
 ol.ext.inherits(ol.control.LayerPopup, ol.control.LayerSwitcher);
@@ -9404,17 +9552,17 @@ ol.control.LayerPopup.prototype.drawList = function(ul, layers) {
     e.preventDefault(); 
 		var l = self._getLayerForLI(this);
 		self.switchLayerVisibility(l,layers);
-		if (e.type=="touchstart") self.element.classList.add("ol-collapsed");
+		if (e.type === 'touchstart') self.element.classList.add('ol-collapsed');
 	};
 	layers.forEach(function(layer) {
     if (self.displayInLayerSwitcher(layer)) {
       var d = ol.ext.element.create('LI', {
-        html: layer.get("title") || layer.get("name"),
+        html: layer.get('title') || layer.get('name'),
         on: { 'click touchstart': setVisibility },
         parent: ul
       });
       self._setLayerForLI(d, layer);
-			if (self.testLayerVisibility(layer)) d.classList.add("ol-layer-hidden");
+			if (self.testLayerVisibility(layer)) d.classList.add('ol-layer-hidden');
 			if (layer.getVisible()) d.classList.add('ol-visible');
 		}
 	});
@@ -15495,13 +15643,15 @@ ol.control.Swipe.prototype.precomposeLeft = function(e) {
       // get render coordinates and dimensions given CSS coordinates
       var bottomLeft = this._transformPt(e, [0, mapSize[1]]);
       var topRight = this._transformPt(e, [mapSize[0], 0]);
-      var width = topRight[0] - bottomLeft[0];
-      var height = topRight[1] - bottomLeft[1];
+      var fullWidth = topRight[0] - bottomLeft[0];
+      var fullHeight = topRight[1] - bottomLeft[1];
       if (this.get('orientation') === "vertical") {
-        width = Math.round(width * this.get('position'));
+        var width = Math.round(fullWidth * this.get('position'));
+        var height = fullHeight;
       } else {
-        height = Math.round(height * this.get('position'));
-        bottomLeft[1] += mapSize[1] - height;
+        var width = fullWidth;
+        var height = Math.round((fullHeight * this.get('position')));
+        bottomLeft[1] += fullHeight - height;
       }
       ctx.scissor(bottomLeft[0], bottomLeft[1], width, height); 
     }
@@ -15540,14 +15690,16 @@ ol.control.Swipe.prototype.precomposeRight = function(e) {
       // get render coordinates and dimensions given CSS coordinates
       var bottomLeft = this._transformPt(e, [0, mapSize[1]]);
       var topRight = this._transformPt(e, [mapSize[0], 0]);
-      var width = topRight[0] - bottomLeft[0];
-      var height = topRight[1] - bottomLeft[1];
+      var fullWidth = topRight[0] - bottomLeft[0];
+      var fullHeight = topRight[1] - bottomLeft[1];
       if (this.get('orientation') === "vertical") {
-        width = Math.round(width * (1-this.get('position')));
-        bottomLeft[0] += mapSize[0] - width;
+        var height = fullHeight;
+        var width = Math.round(fullWidth * (1-this.get('position')));
+        bottomLeft[0] += fullWidth - width;
       } else {
-        height = Math.round(height * (1-this.get('position')));
-        }
+        var width = fullWidth;
+        var height = Math.round(fullHeight * (1-this.get('position')));
+      }
       ctx.scissor(bottomLeft[0], bottomLeft[1], width, height); 
     }
   } else {
@@ -17603,12 +17755,12 @@ ol.control.WMTSCapabilities.prototype.getRequestParam = function(options) {
  * @returns {*}
  * @private
  */
-ol.control.WMTSCapabilities.prototype._getTG = function(tileMatrixSet, minZoom, maxZoom) {
+ol.control.WMTSCapabilities.prototype._getTG = function(tileMatrixSet, minZoom, maxZoom, tilePrefix) {
   var matrixIds = new Array();
   var resolutions = new Array();
   var size = ol.extent.getWidth(ol.proj.get('EPSG:3857').getExtent()) / 256;
   for (var z=0; z <= (maxZoom ? maxZoom : 20) ; z++) {
-    var id = tileMatrixSet !== 'PM' ? tileMatrixSet+':'+z : z;
+    var id = tilePrefix ? tileMatrixSet+':'+z : z;
     matrixIds[z] = id ; 
     resolutions[z] = size / Math.pow(2, z);
   }
@@ -17623,11 +17775,12 @@ ol.control.WMTSCapabilities.prototype._getTG = function(tileMatrixSet, minZoom, 
  * @param {sting} tileMatrixSet
  * @param {number} minZoom
  * @param {number} maxZoom
+ * @param {boolean} tilePrefix
  * @returns {ol.tilegrid.WMTS}
  * @private
  */
-ol.control.WMTSCapabilities.prototype.getTileGrid = function(tileMatrixSet, minZoom, maxZoom) {
-  return new ol.tilegrid.WMTS(this._getTG(tileMatrixSet, minZoom, maxZoom));
+ol.control.WMTSCapabilities.prototype.getTileGrid = function(tileMatrixSet, minZoom, maxZoom, tilePrefix) {
+  return new ol.tilegrid.WMTS(this._getTG(tileMatrixSet, minZoom, maxZoom, tilePrefix));
 };
 /** Return a WMTS options for the given capabilities
  * @param {*} caps layer capabilities (read from the capabilities)
@@ -17650,6 +17803,7 @@ ol.control.WMTSCapabilities.prototype.getOptionsFromCap = function(caps, parent)
     this.showError({ type: 'TileMatrix' });
     return;
   }
+  var tilePrefix = tmatrix.TileMatrixSetLimits[0].TileMatrix.split(':').length > 1;
   tmatrix.TileMatrixSetLimits.forEach(function(tm) {
     var zoom = tm.TileMatrix.split(':').pop();
     minZoom = Math.min(minZoom, parseInt(zoom));
@@ -17670,6 +17824,7 @@ ol.control.WMTSCapabilities.prototype.getOptionsFromCap = function(caps, parent)
     format: caps.Format[0] || 'image/jpeg',
     projection: 'EPSG:3857',
     //tileGrid: tg,
+    tilePrefix: tilePrefix,
     minZoom: minZoom,
     maxZoom: maxZoom,
     style: caps.Style ? caps.Style[0].Identifier : 'normal',
@@ -17696,7 +17851,7 @@ ol.control.WMTSCapabilities.prototype.getOptionsFromCap = function(caps, parent)
     source_opt.tileGrid = 'TILEGRID';
     var tso = JSON.stringify([ source_opt ], null, "\t").replace(/\\"/g,'"');
     tso = tso.replace('"TILEGRID"', 'new ol.tilegrid.WMTS('
-      + JSON.stringify(this._getTG(source_opt.matrixSet, source_opt.minZoom, source_opt.maxZoom), null, '\t').replace(/\n/g, '\n\t\t')
+      + JSON.stringify(this._getTG(source_opt.matrixSet, source_opt.minZoom, source_opt.maxZoom, source_opt.tilePrefix), null, '\t').replace(/\n/g, '\n\t\t')
       + ')'
     );
     delete source_opt.tileGrid;
@@ -17786,7 +17941,7 @@ ol.control.WMTSCapabilities.prototype._getFormOptions = function() {
  */
 ol.control.WMTSCapabilities.prototype.getLayerFromOptions = function (options) {
   if (!options) return;
-  options.source.tileGrid = this.getTileGrid(options.source.matrixSet, options.source.minZoom, options.source.maxZoom);
+  options.source.tileGrid = this.getTileGrid(options.source.matrixSet, options.source.minZoom, options.source.maxZoom, options.source.tilePrefix);
   options.layer.source = new ol.source.WMTS(options.source);
   var layer = new ol.layer.Tile(options.layer);
   // Restore options
@@ -21122,6 +21277,110 @@ ol.interaction.CenterTouch.prototype.getPosition = function () {
   return this.pos_; 
 };
 
+/** Clip interaction to clip layers in a circle
+ * @constructor
+ * @extends {ol.interaction.Pointer}
+ * @param {ol.interaction.ClipMap.options} options flashlight  param
+ *  @param {number} options.radius radius of the clip, default 100 (px)
+ */
+ol.interaction.ClipMap = function(options) {
+  this.layers_ = [];
+  ol.interaction.Pointer.call(this, {
+    handleDownEvent: this._clip,
+    handleMoveEvent: this._clip
+  });
+  // Default options
+  options = options || {};
+  this.pos = false;
+  this.radius = (options.radius||100);
+  this.pos = [-1000, -1000];
+};
+ol.ext.inherits(ol.interaction.ClipMap, ol.interaction.Pointer);
+/** Set the map > start postcompose
+*/
+ol.interaction.ClipMap.prototype.setMap = function(map) {
+  if (this.getMap()) {
+    if (this._listener) ol.Observable.unByKey(this._listener);
+    var layerDiv = this.getMap().getViewport().querySelector('.ol-layers');
+    layerDiv.style.clipPath = ''; 
+  }
+  ol.interaction.Pointer.prototype.setMap.call(this, map);
+  if (map) {
+    this._listener = map.on('change:size', this._clip.bind(this));
+  }
+};
+/** Set clip radius
+ *	@param {integer} radius
+ */
+ol.interaction.ClipMap.prototype.setRadius = function(radius) {
+  this.radius = radius;
+  this._clip();
+};
+/** Get clip radius
+ *	@returns {integer} radius
+ */
+ol.interaction.ClipMap.prototype.getRadius = function() {
+  return this.radius;
+};
+/** Set position of the clip
+ * @param {ol.coordinate} coord
+ */
+ol.interaction.ClipMap.prototype.setPosition = function(coord) {
+  if (this.getMap()) {
+    this.pos = this.getMap().getPixelFromCoordinate(coord);
+    this._clip();
+  }
+};
+/** Get position of the clip
+ * @returns {ol.coordinate}
+ */
+ol.interaction.ClipMap.prototype.getPosition = function() {
+  if (this.pos) return this.getMap().getCoordinateFromPixel(this.pos);
+  return null;
+};
+/** Set position of the clip
+ * @param {ol.Pixel} pixel
+ */
+ ol.interaction.ClipMap.prototype.setPixelPosition = function(pixel) {
+  this.pos = pixel;
+  this._clip();
+};
+/** Get position of the clip
+ * @returns {ol.Pixel} pixel
+ */
+ ol.interaction.ClipMap.prototype.getPixelPosition = function() {
+  return this.pos;
+};
+/** Set position of the clip
+ * @param {ol.MapBrowserEvent} e
+ * @privata
+ */
+ol.interaction.ClipMap.prototype._setPosition = function(e) {
+  if (e.type==='pointermove' && this.get('action')==='onclick') return;
+  if (e.pixel) {
+    this.pos = e.pixel;
+  }
+  if (this.getMap()) {
+    try { this.getMap().renderSync(); } catch(e) { /* ok */ }
+  }
+};
+/** Clip
+ * @private
+ */
+ ol.interaction.ClipMap.prototype._clip = function(e) {
+  if (e && e.pixel) {
+    this.pos = e.pixel;
+  }
+  if (this.pos && this.getMap()) {
+    var layerDiv = this.getMap().getViewport().querySelector('.ol-layers');
+    layerDiv.style.clipPath = 'circle(' 
+      + this.getRadius() + 'px' // radius
+      + ' at ' 
+      + this.pos[0] + 'px '
+      + this.pos[1] + 'px)';
+  }
+};
+
 /** An interaction to copy/paste features on a map. 
  * It will fire a 'focus' event on the map when map is focused (use mapCondition option to handle the condition when the map is focused).
  * @constructor
@@ -21456,7 +21715,7 @@ ol.interaction.DragOverlay.prototype.removeOverlay = function (ov) {
  * @fires modifyend
  * @param {olx.interaction.DrawHoleOptions} options extend olx.interaction.DrawOptions
  * 	@param {Array<ol.layer.Vector> | function | undefined} options.layers A list of layers from which polygons should be selected. Alternatively, a filter function can be provided. default: all visible layers
- * 	@param {Array<ol.Feature> | ol.Collection<ol.Feature> | function | undefined} options.features An array or a collection of features the interaction applies on or a function that takes a feature and a layer and returns true if the feature is a candidate
+ * 	@param {Array<ol.Feature> | ol.Collection<ol.Feature> | function | undefined} options.featureFilter An array or a collection of features the interaction applies on or a function that takes a feature and a layer and returns true if the feature is a candidate
  * 	@param { ol.style.Style | Array<ol.style.Style> | StyleFunction | undefined }	Style for the selected features, default: default edit style
  */
 ol.interaction.DrawHole = function(options) {
@@ -21490,10 +21749,10 @@ ol.interaction.DrawHole = function(options) {
     }
   }
   // Features to apply on 
-  if (typeof(options.features) === 'function') {
-    this._features = options.features;
-  } else if (options.features) {
-    var features = options.features;
+  if (typeof(options.featureFilter) === 'function') {
+    this._features = options.featureFilter;
+  } else if (options.featureFilter) {
+    var features = options.featureFilter;
     this._features = function(f) {
       if (features.indexOf) {
         return !!features[features.indexOf(f)];
@@ -24126,6 +24385,7 @@ ol.interaction.ModifyTouch.prototype.getPopupContent = function() {
  * @fires offsetting
  * @fires offsetend
  * @param {any} options
+ *	@param {function} [options.filter] a function that takes a feature and a layer and return true if the feature can be modified
  *	@param {ol.layer.Vector | Array<ol.layer.Vector>} options.layers list of feature to transform 
  *	@param {ol.Collection.<ol.Feature>} options.features collection of feature to transform
  *	@param {ol.source.Vector | undefined} options.source source to duplicate feature when ctrl key is down
@@ -24141,6 +24401,7 @@ ol.interaction.Offset = function(options) {
     handleMoveEvent: this.handleMoveEvent_,
     handleUpEvent: this.handleUpEvent_
   });
+  this._filter = options.filter;
 	// Collection of feature to transform
 	this.features_ = options.features;
 	// List of layers to transform
@@ -24176,6 +24437,7 @@ ol.interaction.Offset.prototype.getFeatureAtPixel_ = function(e) {
 	return this.getMap().forEachFeatureAtPixel(e.pixel,
 		function(feature, layer) {
       var current;
+      if (self._filter && !self._filter(feature, layer)) return false;
 			// feature belong to a layer
 			if (self.layers_) {
         for (var i=0; i<self.layers_.length; i++) {
@@ -25123,11 +25385,11 @@ ol.ext.inherits(ol.interaction.SnapLayerPixel, ol.interaction.Interaction);
  * @extends {ol.interaction.Interaction}
  * @fires  beforesplit, aftersplit, pointermove
  * @param {*} 
- *  @param {ol.source.Vector|Array<ol.source.Vector>} options.source a list of source to split (configured with useSpatialIndex set to true)
- *  @param {ol.Collection.<ol.Feature>} options.features collection of feature to split
+ *  @param {ol.source.Vector|Array<ol.source.Vector>} [options.sources] a list of source to split (configured with useSpatialIndex set to true), if none use map visible layers.
+ *  @param {ol.Collection.<ol.Feature>} options.features collection of feature to split (instead of a list of sources)
  *  @param {integer} options.snapDistance distance (in px) to snap to an object, default 25px
  *	@param {string|undefined} options.cursor cursor name to display when hovering an objet
- *  @param {function|undefined} opttion.filter a filter that takes a feature and return true if it can be clipped, default always split.
+ *  @param {function|undefined} options.filter a filter that takes a feature and return true if it can be clipped, default always split.
  *  @param ol.style.Style | Array<ol.style.Style> | false | undefined} options.featureStyle Style for the selected features, choose false if you don't want feature selection. By default the default edit style is used.
  *  @param {ol.style.Style | Array<ol.style.Style> | undefined} options.sketchStyle Style for the sektch features. 
  *  @param {function|undefined} options.tolerance Distance between the calculated intersection and a vertex on the source geometry below which the existing vertex will be used for the split.  Default is 1e-10.
@@ -25154,7 +25416,7 @@ ol.interaction.Split = function(options) {
   // Cursor
   this.cursor_ = options.cursor;
   // List of source to split
-  this.sources_ = options.sources ? (options.sources instanceof Array) ? options.sources:[options.sources] : [];
+  this.setSources(options.sources);
   if (options.features) {
     this.sources_.push (new ol.source.Vector({ features: options.features }));
   }
@@ -25232,6 +25494,34 @@ ol.interaction.Split.prototype.setMap = function(map) {
   ol.interaction.Interaction.prototype.setMap.call (this, map);
   this.overlayLayer_.setMap(map);
 };
+/** Get sources to split features in
+ * @return {Array<ol.source.Vector>}
+ */
+ol.interaction.Split.prototype.getSources = function() {
+  if (!this.sources_ && this.getMap()) {
+    var sources = []
+    function getSources(layers) {
+      layers.forEach(function(layer) {
+        if (layer.getVisible()) {
+          if (layer.getSource && layer.getSource() instanceof ol.source.Vector) {
+            sources.unshift(layer.getSource());
+          } else if (layer.getLayers) {
+            getSources(layer.getLayers());
+          }
+        }
+      })
+    }
+    getSources(this.getMap().getLayers())
+    return sources;
+  }
+  return this.sources_ || [];
+};
+/** Set sources to split features in 
+ * @param {ol.source.Vector|Array<ol.source.Vector>} [sources]
+ */
+ol.interaction.Split.prototype.setSources = function(sources) {
+  this.sources_ = sources ? (sources instanceof Array ? sources||false : [sources]) : false;
+};
 /** Get closest feature at pixel
  * @param {ol.Pixel} 
  * @return {ol.feature} 
@@ -25240,7 +25530,7 @@ ol.interaction.Split.prototype.setMap = function(map) {
 ol.interaction.Split.prototype.getClosestFeature = function(e) {
   var source, f, c, g, d = this.snapDistance_+1;
   // Look for closest point in the sources
-  this.sources_.forEach(function(si) {
+  this.getSources().forEach(function(si) {
     var fi = si.getClosestFeatureToCoordinate(e.coordinate);
     if (fi && fi.getGeometry().splitAt) {
       var ci = fi.getGeometry().getClosestPoint(e.coordinate);
@@ -25372,7 +25662,7 @@ ol.interaction.Split.prototype.handleMoveEvent = function(e) {
  * @extends {ol.interaction.Interaction}
  * @fires  beforesplit, aftersplit
  * @param {options} 
- *  @param {ol.source.Vector|Array{ol.source.Vector}} options.source The target source (or array of source) with features to be split (configured with useSpatialIndex set to true)
+ *  @param {ol.source.Vector|Array<ol.source.Vector>} options.source The target source (or array of source) with features to be split (configured with useSpatialIndex set to true)
  *  @param {ol.source.Vector} options.triggerSource Any newly created or modified features from this source will be used to split features on the target source. If none is provided the target source is used instead.
  *  @param {ol.Collection.<ol.Feature>} options.features A collection of feature to be split (replace source target).
  *  @param {ol.Collection.<ol.Feature>} options.triggerFeatures Any newly created or modified features from this collection will be used to split features on the target source (replace triggerSource).
@@ -31386,7 +31676,7 @@ ol.layer.Geoportail.getCapabilities = function(gppKey) {
           server: l.getElementsByTagName('gpp:Key')[0].innerHTML.replace(gppKey+"/",""), 
           layer: l.getElementsByTagName('Name')[0].innerHTML,
           title: l.getElementsByTagName('Title')[0].innerHTML,
-          format: l.getElementsByTagName('Format')[0].innerHTML,
+          format: l.getElementsByTagName('Format')[0] ? l.getElementsByTagName('Format')[0].innerHTML : 'image.jpeg',
           style: l.getElementsByTagName('Style')[0].getElementsByTagName('Name')[0].innerHTML,
           queryable: (l.attributes.queryable.value==='1'),
           tilematrix: 'PM',
@@ -33981,7 +34271,7 @@ ol.Overlay.Placemark.prototype.setRadius = function(size) {
  *  @param {Number|Array<number>} options.offsetBox an offset box
  *  @param {ol.OverlayPositioning | string | undefined} options.positionning 
  *    the 'auto' positioning var the popup choose its positioning to stay on the map.
- *  @param {Template|function} options.template A template with a list of properties to use in the popup or a function that takes a feature and returns a Template
+ *  @param {Template|function} [options.template] A template with a list of properties to use in the popup or a function that takes a feature and returns a Template, default use all feature properties
  *  @param {ol.interaction.Select} options.select a select interaction to get features from
  *  @param {boolean} options.keepSelection keep original selection, otherwise set selection to the current popup feature and add a counter to change current feature, default false
  *  @param {boolean} options.canFix Enable popup to be fixed, default false
@@ -34013,9 +34303,18 @@ ol.Overlay.PopupFeature = function (options) {
 };
 ol.ext.inherits(ol.Overlay.PopupFeature, ol.Overlay.Popup);
 /** Set the template
- * @param {Template} template A template with a list of properties to use in the popup
+ * @param {Template} [template] A template with a list of properties to use in the popup, default use all features properties
  */
 ol.Overlay.PopupFeature.prototype.setTemplate = function(template) {
+  if (!template) {
+    template = function(f) {
+      var prop = f.getProperties();
+      delete prop[f.getGeometryName()];
+      return {
+        attributes: Object.keys(prop)
+      }
+    }
+  }
   this._template = template;
   this._attributeObject(this._template);
 }
@@ -35438,76 +35737,82 @@ ol.geom.Circle.prototype.intersection = function(geom, resolution) {
  * @param {ol.Coordinate | Array<ol.Coordinate>} pt points to split the line
  * @param {Number} tol distance tolerance for 2 points to be equal
  */
-ol.geom.LineString.prototype.splitAt = function(pt, tol) {
+ol.geom.LineString.prototype.splitAt = function (pt, tol) {
   var i;
   if (!pt) return [this];
-    if (!tol) tol = 1e-10;
-    // Test if list of points
-    if (pt.length && pt[0].length) {
-      var result = [this];
-      for (i=0; i<pt.length; i++) {
-        var r = [];
-        for (var k=0; k<result.length; k++) {
-          var ri = result[k].splitAt(pt[i], tol);
-          r = r.concat(ri);
-        }
-        result = r;
+  if (!tol) tol = 1e-10;
+  // Test if list of points
+  if (pt.length && pt[0].length) {
+    var result = [this];
+    for (i = 0; i < pt.length; i++) {
+      var r = [];
+      for (var k = 0; k < result.length; k++) {
+        var ri = result[k].splitAt(pt[i], tol);
+        r = r.concat(ri);
       }
-      return result;
+      result = r;
     }
-    // Nothing to do
-    if (ol.coordinate.equal(pt,this.getFirstCoordinate())
-    || ol.coordinate.equal(pt,this.getLastCoordinate())) {
-      return [this];
+    return result;
+  }
+  // Nothing to do
+  if (
+    ol.coordinate.equal(pt, this.getFirstCoordinate()) ||
+    ol.coordinate.equal(pt, this.getLastCoordinate())
+  ) {
+    return [this];
+  }
+  // Get
+  var c0 = this.getCoordinates();
+  var ci = [c0[0]];
+  var c = [];
+  for (i = 0; i < c0.length - 1; i++) {
+    // Filter equal points
+    if (ol.coordinate.equal(c0[i], c0[i + 1])) continue;
+    // Extremity found
+    if (ol.coordinate.equal(pt, c0[i + 1])) {
+      ci.push(c0[i + 1]);
+      c.push(new ol.geom.LineString(ci));
+      ci = [];
     }
-    // Get
-    var c0 = this.getCoordinates();
-    var ci=[c0[0]];
-    var c = [];
-    for (i=0; i<c0.length-1; i++) {
-      // Filter equal points
-      if (ol.coordinate.equal(c0[i],c0[i+1])) continue;
-      // Extremity found
-      if (ol.coordinate.equal(pt,c0[i+1])) {
-        ci.push(c0[i+1]);
+    // Test alignement
+    else if (!ol.coordinate.equal(pt, c0[i])) {
+      var d1,
+        d2,
+        split = false;
+      if (c0[i][0] == c0[i + 1][0]) {
+        d1 = (c0[i][1] - pt[1]) / (c0[i][1] - c0[i + 1][1]);
+        split = c0[i][0] == pt[0] && 0 < d1 && d1 <= 1;
+      } else if (c0[i][1] == c0[i + 1][1]) {
+        d1 = (c0[i][0] - pt[0]) / (c0[i][0] - c0[i + 1][0]);
+        split = c0[i][1] == pt[1] && 0 < d1 && d1 <= 1;
+      } else {
+        // d1 = (c0[i][0]-pt[0]) / (c0[i][0]-c0[i+1][0]);
+        // d2 = (c0[i][1]-pt[1]) / (c0[i][1]-c0[i+1][1]);
+        // split = (Math.abs(d1-d2) <= tol && 0 < d1 && d1 <= 1)
+        /**
+         * Glavina: switch to slower but more responsive version
+         */
+        var toleranceOffset = 0.001;
+        var total = ol.coordinate.dist2d(c0[i], c0[i + 1]);
+        var sum =
+          ol.coordinate.dist2d(c0[i], pt) + ol.coordinate.dist2d(pt, c0[i + 1]);
+        split = Math.abs(sum - total) < toleranceOffset;
+      }
+      // pt is inside the segment > split
+      if (split) {
+        ci.push(pt);
         c.push(new ol.geom.LineString(ci));
-        ci = [];
+        ci = [pt];
       }
-      // Test alignement
-      else if (!ol.coordinate.equal(pt,c0[i])) {
-        var d1, d2, split=false;
-        if (c0[i][0] == c0[i+1][0]) {
-          d1 = (c0[i][1]-pt[1]) / (c0[i][1]-c0[i+1][1]);
-          split = (c0[i][0] == pt[0]) && (0 < d1 && d1 <= 1)
-        } else if (c0[i][1] == c0[i+1][1]) {
-          d1 = (c0[i][0]-pt[0]) / (c0[i][0]-c0[i+1][0]);
-          split = (c0[i][1] == pt[1]) && (0 < d1 && d1 <= 1)
-        } else {
-          // d1 = (c0[i][0]-pt[0]) / (c0[i][0]-c0[i+1][0]);
-          // d2 = (c0[i][1]-pt[1]) / (c0[i][1]-c0[i+1][1]);
-          // split = (Math.abs(d1-d2) <= tol && 0 < d1 && d1 <= 1)
-          /**
-           * Glavina: switch to slower but more responsive version
-           */
-          var toleranceOffset = 0.001;
-          var total = ol.coordinate.dist2d(c0[i], c0[i+1]);
-          var sum = ol.coordinate.dist2d(c0[i], pt) + ol.coordinate.dist2d(pt, c0[i+1]);
-          split = Math.abs(sum - total) < toleranceOffset;
-        }
-        // pt is inside the segment > split
-        if (split) {
-          ci.push(pt);
-          c.push (new ol.geom.LineString(ci));
-          ci = [pt];
-        }
-      }
-      ci.push(c0[i+1]);
     }
-    if (ci.length>1) c.push (new ol.geom.LineString(ci));
-    if (c.length) return c;
-    else return [this];
-}
+    ci.push(c0[i + 1]);
+  }
+  if (ci.length > 1) c.push(new ol.geom.LineString(ci));
+  if (c.length) return c;
+  else return [this];
+};
 // import('ol-ext/geom/LineStringSplitAt')
+
 /*	Copyright (c) 2016 Jean-Marc VIGLINO, 
 	released under the CeCILL-B license (French BSD license)
 	(http://www.cecill.info/licences/Licence_CeCILL-B_V1-en.txt).
@@ -37880,8 +38185,9 @@ ol.style.FlowLine.prototype._splitInto = function(geom, nb, min) {
  *  @param {number} [options.fontSize=1] size of the font compare to the radius, fontSize greater than 1 will exceed the symbol extent
  *  @param {string} [options.fontStyle] the font style (bold, italic, bold italic, etc), default none
  *  @param {boolean} options.gradient true to display a gradient on the symbol
- *  @param {number} [options.offsetX=0] default 0
- *  @param {number} [options.offsetY=0] default 0
+ *  @param {Array<number>} [options.displacement] to use with ol > 6
+ * 	@param {number} [options.offsetX=0] Horizontal offset in pixels, deprecated use displacement with ol>6
+ * 	@param {number} [options.offsetY=0] Vertical offset in pixels, deprecated use displacement with ol>6
  *  @param {_ol_style_Fill_} options.fill
  *  @param {_ol_style_Stroke_} options.stroke
  * @extends {ol.style.RegularShape}
@@ -37894,25 +38200,29 @@ ol.style.FontSymbol = function(options) {
   if (options.stroke) {
     strokeWidth = options.stroke.getWidth();
   }
+  if (!options.displacement) {
+    options.displacement = [options.offsetX || 0, -options.offsetY || 0];
+  }
+  if (typeof(options.opacity)=="number") this.setOpacity(options.opacity);
+  this._color = options.color;
+  this._fontSize = options.fontSize || 1;
+  this._fontStyle = options.fontStyle || '';
+  this._stroke = options.stroke;
+  this._fill = options.fill;
+  this._radius = options.radius -strokeWidth;
+  this._form = options.form || "none";
+  this._gradient = options.gradient;
+  this._offset = [options.offsetX ? options.offsetX :0, options.offsetY ? options.offsetY :0];
+  if (options.glyph) this._glyph = this.getGlyph(options.glyph);
+  else this._glyph = this.getTextGlyph(options.text||'', options.font);
   ol.style.RegularShape.call (this, { 
     radius: options.radius, 
-    fill:options.fill,
-    rotation:options.rotation, 
+    fill: options.fill,
+    rotation: options.rotation, 
+    displacement: options.displacement,
     rotateWithView: options.rotateWithView 
   });
-  if (typeof(options.opacity)=="number") this.setOpacity(options.opacity);
-  this.color_ = options.color;
-  this.fontSize_ = options.fontSize || 1;
-  this.fontStyle_ = options.fontStyle || '';
-  this.stroke_ = options.stroke;
-  this.fill_ = options.fill;
-  this.radius_ = options.radius -strokeWidth;
-  this.form_ = options.form || "none";
-  this.gradient_ = options.gradient;
-  this.offset_ = [options.offsetX ? options.offsetX :0, options.offsetY ? options.offsetY :0];
-  if (options.glyph) this.glyph_ = this.getGlyph(options.glyph);
-  else this.glyph_ = this.getTextGlyph(options.text||'', options.font);
-  this.renderMarker_();
+  if (!this.getDisplacement) this.getImage();
 };
 ol.ext.inherits(ol.style.FontSymbol, ol.style.RegularShape);
 /** Cool stuff to get the image symbol for a style
@@ -37965,23 +38275,23 @@ ol.style.FontSymbol.addDefs = function(font, glyphs) {
 ol.style.FontSymbol.prototype.clone = function() {
   var g = new ol.style.FontSymbol({
     glyph: '',
-    color: this.color_,
-    fontSize: this.fontSize_,
-    fontStyle: this.fontStyle_,
-    stroke: this.stroke_,
-    fill: this.fill_,
-    radius: this.radius_ + (this.stroke_ ? this.stroke_.getWidth():0),
-    form: this.form_,
-    gradient: this.gradient_,
-    offsetX: this.offset_[0],
-    offsetY: this.offset_[1],
+    color: this._color,
+    fontSize: this._fontSize,
+    fontStyle: this._fontStyle,
+    stroke: this._stroke,
+    fill: this._fill,
+    radius: this._radius + (this._stroke ? this._stroke.getWidth():0),
+    form: this._form,
+    gradient: this._gradient,
+    offsetX: this._offset[0],
+    offsetY: this._offset[1],
     opacity: this.getOpacity(),
     rotation: this.getRotation(),
     rotateWithView: this.getRotateWithView()
   });
   g.setScale(this.getScale());
-  g.glyph_ = this.glyph_;
-  g.renderMarker_();
+  g.glyph_ = this._glyph;
+  g.getImage();
   return g;
 };
 /** Get the fill style for the symbol.
@@ -37989,14 +38299,14 @@ ol.style.FontSymbol.prototype.clone = function() {
  * @api
  */
 ol.style.FontSymbol.prototype.getFill = function() {
-  return this.fill_;
+  return this._fill;
 };
 /** Get the stroke style for the symbol.
  * @return {_ol_style_Stroke_} Stroke style.
  * @api
  */
 ol.style.FontSymbol.prototype.getStroke = function() {
-  return this.stroke_;
+  return this._stroke;
 };
 /** Get the glyph definition for the symbol.
  * @param {string|undefined} name a glyph name to get the definition, default return the glyph definition for the style.
@@ -38005,7 +38315,7 @@ ol.style.FontSymbol.prototype.getStroke = function() {
  */
 ol.style.FontSymbol.prototype.getGlyph = function(name) {
   if (name) return ol.style.FontSymbol.prototype.defs.glyphs[name] || { font:'sans-serif', char:name.charAt(0), theme:'none', name:'none', search:'' };
-  else return this.glyph_;
+  else return this._glyph;
 };
 /** Get glyph definition given a text and a font
  * @param {string|undefined} text
@@ -38023,7 +38333,7 @@ ol.style.FontSymbol.prototype.getTextGlyph = function(text, font) {
  */
 ol.style.FontSymbol.prototype.getGlyphName = function() {
   for (var i in ol.style.FontSymbol.prototype.defs.glyphs) {
-    if (ol.style.FontSymbol.prototype.defs.glyphs[i] === this.glyph_) return i;
+    if (ol.style.FontSymbol.prototype.defs.glyphs[i] === this._glyph) return i;
   }
   return '';
 };
@@ -38035,28 +38345,22 @@ ol.style.FontSymbol.prototype.getGlyphName = function() {
 ol.style.FontSymbol.prototype.getFontInfo = function(glyph) {
   return ol.style.FontSymbol.prototype.defs.fonts[glyph.font];
 }
-/** @private
+/**
+ * Get the image icon.
+ * @param {number} pixelRatio Pixel ratio.
+ * @return {HTMLCanvasElement} Image or Canvas element.
+ * @api
  */
-ol.style.FontSymbol.prototype.renderMarker_ = function(pixelratio) {
-  if (!pixelratio) {
-    if (this.getPixelRatio) {
-      pixelratio = window.devicePixelRatio;
-      this.renderMarker_(pixelratio);
-      if (this.getPixelRatio && pixelratio!==1) this.renderMarker_(1); 
-    } else {
-      this.renderMarker_(1);
-    }
-    return;
-  }
+ol.style.FontSymbol.prototype.getImage = function(pixelratio) {
+  pixelratio = pixelratio || 1;
+  // get canvas
+  var canvas = ol.style.RegularShape.prototype.getImage.call(this, pixelratio);
   var strokeStyle;
   var strokeWidth = 0;
-  if (this.stroke_) {
-    strokeStyle = ol.color.asString(this.stroke_.getColor());
-    strokeWidth = this.stroke_.getWidth();
+  if (this._stroke) {
+    strokeStyle = ol.color.asString(this._stroke.getColor());
+    strokeWidth = this._stroke.getWidth();
   }
-  // get canvas
-  var canvas = this.getImage(pixelratio);
-  //console.log(this.getImage().width+" / "+(2 * (this.radius_ + strokeWidth) + 1));
   /** @type {ol.style.FontSymbol.RenderOptions} */
   var renderOptions = {
     strokeStyle: strokeStyle,
@@ -38068,13 +38372,12 @@ ol.style.FontSymbol.prototype.renderMarker_ = function(pixelratio) {
   context.clearRect(0, 0, canvas.width, canvas.height);
   this.drawMarker_(renderOptions, context, 0, 0, pixelratio);
   // Set anchor / displacement
-  if (this.setDisplacement) {
-    this.setDisplacement([this.offset_[0], -this.offset_[1]])
-  } else {
+  if (!this.getDisplacement) {
     var a = this.getAnchor();
-    a[0] = canvas.width / 2 - this.offset_[0];
-    a[1] = canvas.width / 2 - this.offset_[1];
+    a[0] = canvas.width / 2 - this._offset[0];
+    a[1] = canvas.width / 2 - this._offset[1];
   }
+  return canvas;
 };
 /**
  * @private
@@ -38082,15 +38385,16 @@ ol.style.FontSymbol.prototype.renderMarker_ = function(pixelratio) {
  * @param {CanvasRenderingContext2D} context
  */
 ol.style.FontSymbol.prototype.drawPath_ = function(renderOptions, context) {
-  var s = 2*this.radius_+renderOptions.strokeWidth+1;
+  var s = 2 * this._radius + renderOptions.strokeWidth;
   var w = renderOptions.strokeWidth/2;
   var c = renderOptions.size / 2;
   // Transfo to place the glyph at the right place
-  var transfo = { fac:1, posX:renderOptions.size / 2, posY:renderOptions.size / 2 };
+  var transfo = { fac:1, posX: renderOptions.size / 2, posY: renderOptions.size / 2 };
   context.lineJoin = 'round';
+  context.lineCap = 'round';
   context.beginPath();
   // Draw the path with the form
-  switch (this.form_) {
+  switch (this._form) {
     case "none": {
       transfo.fac=1;  
       break;
@@ -38101,34 +38405,34 @@ ol.style.FontSymbol.prototype.drawPath_ = function(renderOptions, context) {
       break;
     }
     case "poi": {
-      context.arc ( c, c -0.4*this.radius_, 0.6*this.radius_, 0.15*Math.PI, 0.85*Math.PI, true);
+      context.arc ( c, c -0.4*this._radius, 0.6*this._radius, 0.15*Math.PI, 0.85*Math.PI, true);
       context.lineTo ( c-0.89*0.05*s, (0.95+0.45*0.05)*s+w);
       context.arc ( c, 0.95*s+w, 0.05*s, 0.85*Math.PI, 0.15*Math.PI, true);
-      transfo = { fac:0.45, posX:c, posY:c -0.35*this.radius_ };
+      transfo = { fac:0.45, posX:c, posY:c -0.35*this._radius };
       break;
     }
     case "bubble": {
-      context.arc ( c, c -0.2*this.radius_, 0.8*this.radius_, 0.4*Math.PI, 0.6*Math.PI, true);
+      context.arc ( c, c -0.2*this._radius, 0.8*this._radius, 0.4*Math.PI, 0.6*Math.PI, true);
       context.lineTo ( 0.5*s+w, s+w);
-      transfo = { fac:0.7, posX:c, posY:c -0.2*this.radius_ };
+      transfo = { fac:0.7, posX:c, posY:c -0.2*this._radius };
       break;
     }
     case "marker": {
-      context.arc ( c, c -0.2*this.radius_, 0.8*this.radius_, 0.25*Math.PI, 0.75*Math.PI, true);
+      context.arc ( c, c -0.2*this._radius, 0.8*this._radius, 0.25*Math.PI, 0.75*Math.PI, true);
       context.lineTo ( 0.5*s+w, s+w);
-      transfo = { fac:0.7, posX: c, posY: c -0.2*this.radius_ };
+      transfo = { fac:0.7, posX: c, posY: c -0.2*this._radius };
       break;
     }
     case "coma": {
-      context.moveTo ( c + 0.8*this.radius_, c -0.2*this.radius_);
+      context.moveTo ( c + 0.8*this._radius, c -0.2*this._radius);
       context.quadraticCurveTo ( 0.95*s+w, 0.75*s+w, 0.5*s+w, s+w);
-      context.arc ( c, c -0.2*this.radius_, 0.8*this.radius_, 0.45*Math.PI, 0, false);
-      transfo = { fac:0.7, posX: c, posY: c -0.2*this.radius_ };
+      context.arc ( c, c -0.2*this._radius, 0.8*this._radius, 0.45*Math.PI, 0, false);
+      transfo = { fac:0.7, posX: c, posY: c -0.2*this._radius };
       break;
     }
     default: {
       var pts;
-      switch (this.form_) {
+      switch (this._form) {
         case "shield": {
           pts = [ 0.05,0, 0.95,0, 0.95,0.8, 0.5,1, 0.05,0.8, 0.05,0 ]; 
           transfo.posY = 0.45*s+w ;
@@ -38195,19 +38499,19 @@ ol.style.FontSymbol.prototype.drawPath_ = function(renderOptions, context) {
  * @param {number} y The origin for the symbol (y).
  */
 ol.style.FontSymbol.prototype.drawMarker_ = function(renderOptions, context, x, y, pixelratio) {
-  var fcolor = this.fill_ ? this.fill_.getColor() : "#000";
-  var scolor = this.stroke_ ? this.stroke_.getColor() : "#000";
-  if (this.form_ == "none" && this.stroke_ && this.fill_) {
-    scolor = this.fill_.getColor();
-    fcolor = this.stroke_.getColor();
+  var fcolor = this._fill ? this._fill.getColor() : "#000";
+  var scolor = this._stroke ? this._stroke.getColor() : "#000";
+  if (this._form == "none" && this._stroke && this._fill) {
+    scolor = this._fill.getColor();
+    fcolor = this._stroke.getColor();
   }
   // reset transform
   context.setTransform(pixelratio, 0, 0, pixelratio, 0, 0);
   // then move to (x, y)
   context.translate(x, y);
   var tr = this.drawPath_(renderOptions, context, pixelratio);
-  if (this.fill_) {
-    if (this.gradient_ && this.form_!="none") {
+  if (this._fill) {
+    if (this._gradient && this._form!="none") {
       var grd = context.createLinearGradient(0,0,renderOptions.size/2,renderOptions.size);
       grd.addColorStop (1, ol.color.asString(fcolor));
       grd.addColorStop (0, ol.color.asString(scolor));
@@ -38217,30 +38521,30 @@ ol.style.FontSymbol.prototype.drawMarker_ = function(renderOptions, context, x, 
     }
     context.fill();
   }
-  if (this.stroke_ && renderOptions.strokeWidth) {
+  if (this._stroke && renderOptions.strokeWidth) {
     context.strokeStyle = renderOptions.strokeStyle;
     context.lineWidth = renderOptions.strokeWidth;
     context.stroke();
   }
   // Draw the symbol
-  if (this.glyph_.char) {
-    context.font = this.fontStyle_ +' '
-      + (2*tr.fac*(this.radius_)*this.fontSize_)+"px "
-      + this.glyph_.font;
+  if (this._glyph.char) {
+    context.font = this._fontStyle +' '
+      + (2*tr.fac*(this._radius)*this._fontSize)+"px "
+      + this._glyph.font;
     context.strokeStyle = context.fillStyle;
-    context.lineWidth = renderOptions.strokeWidth * (this.form_ == "none" ? 2:1);
-    context.fillStyle = ol.color.asString(this.color_ || scolor);
+    context.lineWidth = renderOptions.strokeWidth * (this._form == "none" ? 2:1);
+    context.fillStyle = ol.color.asString(this._color || scolor);
     context.textAlign = "center";
     context.textBaseline = "middle";
-    var t = this.glyph_.char;
+    var t = this._glyph.char;
     if (renderOptions.strokeWidth && scolor!="transparent") context.strokeText(t, tr.posX, tr.posY);
     context.fillText(t, tr.posX, tr.posY);
   }
-  if (this.form_=="ban" && this.stroke_ && renderOptions.strokeWidth) {
+  if (this._form=="ban" && this._stroke && renderOptions.strokeWidth) {
     context.strokeStyle = renderOptions.strokeStyle;
     context.lineWidth = renderOptions.strokeWidth;
-    var r = this.radius_ + renderOptions.strokeWidth;
-    var d = this.radius_ * Math.cos(Math.PI/4);
+    var r = this._radius + renderOptions.strokeWidth;
+    var d = this._radius * Math.cos(Math.PI/4);
     context.moveTo(r + d, r - d);
     context.lineTo(r - d, r + d);
     context.stroke();
@@ -38250,19 +38554,19 @@ ol.style.FontSymbol.prototype.drawMarker_ = function(renderOptions, context, x, 
  * @inheritDoc
  */
 ol.style.FontSymbol.prototype.getChecksum = function() {
-  var strokeChecksum = (this.stroke_!==null) ? this.stroke_.getChecksum() : '-';
-  var fillChecksum = (this.fill_!==null) ? this.fill_.getChecksum() : '-';
+  var strokeChecksum = (this._stroke!==null) ? this._stroke.getChecksum() : '-';
+  var fillChecksum = (this._fill!==null) ? this._fill.getChecksum() : '-';
   var recalculate = (this.checksums_===null)
     || (strokeChecksum != this.checksums_[1] 
     || fillChecksum != this.checksums_[2] 
-    || this.radius_ != this.checksums_[3] 
-    || this.form_+"-"+this.glyphs_ != this.checksums_[4]
+    || this._radius != this.checksums_[3] 
+    || this._form+"-"+this.glyphs_ != this.checksums_[4]
   );
   if (recalculate) {
     var checksum = 'c' + strokeChecksum + fillChecksum 
-      + ((this.radius_ !== void 0) ? this.radius_.toString() : '-')
-      + this.form_+"-"+this.glyphs_;
-    this.checksums_ = [checksum, strokeChecksum, fillChecksum, this.radius_, this.form_+"-"+this.glyphs_];
+      + ((this._radius !== void 0) ? this._radius.toString() : '-')
+      + this._form+"-"+this.glyphs_;
+    this.checksums_ = [checksum, strokeChecksum, fillChecksum, this._radius, this._form+"-"+this.glyphs_];
   }
   return this.checksums_[0];
 };
@@ -38286,16 +38590,18 @@ ol.style.FontSymbol.prototype.getChecksum = function() {
  *  @param {ol.style.Stroke} options.stroke
  *  @param {String} options.src image src
  *  @param {String} options.crossOrigin The crossOrigin attribute for loaded images. Note that you must provide a crossOrigin value if you want to access pixel data with the Canvas renderer.
- *  @param {Number} options.offsetX Horizontal offset in pixels. Default is 0.
- *  @param {Number} options.offsetY Vertical offset in pixels. Default is 0.
- *  @param {function} options.onload callback when image is loaded (to redraw the layer)
+ *  @param {Array<number>} [options.displacement] to use with ol > 6
+ * 	@param {number} [options.offsetX=0] Horizontal offset in pixels, deprecated use displacement with ol>6
+ * 	@param {number} [options.offsetY=0] Vertical offset in pixels, deprecated use displacement with ol>6
+ *  @param {function} [options.onload] callback when image is loaded (to redraw the layer)
  * @extends {ol.style.RegularShape}
  * @implements {ol.structs.IHasChecksum}
  * @api
  */
 ol.style.Photo = function(options) {
   options = options || {};
-  this.sanchor_ = options.kind=="anchored" ? 8:0;
+  if (!options.displacement) options.displacement = [options.offsetX || 0, -options.offsetY || 0]
+  this.sanchor_ = (options.kind==="anchored" ? 8 : 0);
   this._shadow = (Number(options.shadow) || 0);
   if (!options.stroke) {
     options.stroke = new ol.style.Stroke({ width: 0, color: "#000"})
@@ -38307,12 +38613,13 @@ ol.style.Photo = function(options) {
   ol.style.RegularShape.call (this, {
     radius: options.radius + strokeWidth + this.sanchor_/2 + this._shadow/2, 
     points: 0,
+    displacement: [ options.displacement[0] || 0, (options.displacement[1] || 0) + this.sanchor_],
     // No fill to create a hit detection Image (v5) or transparent (v6) 
     fill: ol.style.RegularShape.prototype.render ? new ol.style.Fill({ color: [0,0,0,0] }) : null
   });
   // Hack to get the hit detection Image (v4.6.5 ?)
   if (!this.getHitDetectionImage) {
-    var img = this.getImage();
+    var img = ol.style.RegularShape.prototype.getImage.call(this);
     if (!this.hitDetectionCanvas_) {
       for (var i in this) {
         if (this[i] && this[i].getContext && this[i]!==img) {
@@ -38329,6 +38636,8 @@ ol.style.Photo = function(options) {
     this.getHitDetectionImage = function() {
       return hit;
     }
+    // Calculate image
+    setTimeout(function() { this.getImage(); }.bind(this))
   }
   this._stroke = options.stroke;
   this._fill = options.fill;
@@ -38341,7 +38650,6 @@ ol.style.Photo = function(options) {
   this._onload = options.onload;
   if (typeof(options.opacity)=='number') this.setOpacity(options.opacity);
   if (typeof(options.rotation)=='number') this.setRotation(options.rotation);
-  this.renderPhoto_();
 };
 ol.ext.inherits(ol.style.Photo, ol.style.RegularShape);
 /** Set photo offset
@@ -38349,7 +38657,7 @@ ol.ext.inherits(ol.style.Photo, ol.style.RegularShape);
  */
 ol.style.Photo.prototype.setOffset = function(offset) {
   this._offset = [offset[0]||0, offset[1]||0];
-  this.renderPhoto_();
+  this.getImage();
 };
 /**
  * Clones the style. 
@@ -38370,7 +38678,7 @@ ol.style.Photo.prototype.clone = function() {
     opacity: this.getOpacity(),
     rotation: this.getRotation()
   });
-  i.renderPhoto_();
+  i.getImage();
   return i;
 };
 /**
@@ -38462,32 +38770,30 @@ ol.style.Photo.prototype.drawBack_ = function(context, color, strokeWidth, pixel
   context.closePath();
 };
 /**
- * @private
+ * Get the image icon.
+ * @param {number} pixelRatio Pixel ratio.
+ * @return {HTMLCanvasElement} Image or Canvas element.
+ * @api
  */
-ol.style.Photo.prototype.renderPhoto_ = function(pixelratio) {
-  if (!pixelratio) {
-    if (this.getPixelRatio) {
-      pixelratio = window.devicePixelRatio;
-      this.renderPhoto_(pixelratio);
-    } else {
-      this.renderPhoto_(1);
-    }
-    return;
-  }
+ol.style.Photo.prototype.getImage = function(pixelratio) {
+  pixelratio = pixelratio || 1;
+  var canvas = ol.style.RegularShape.prototype.getImage.call(this, pixelratio);
+  if (this._gethit) return canvas;
   var strokeStyle;
   var strokeWidth = 0;
   if (this._stroke) {
     strokeStyle = ol.color.asString(this._stroke.getColor());
     strokeWidth = this._stroke.getWidth();
   }
-  var canvas = this.getImage(pixelratio);
   // Draw hitdetection image
-  var context = this.getHitDetectionImage().getContext('2d');
-  context.save();
-  context.setTransform(1,0,0,1,0,0)
-  this.drawBack_(context,"#000",strokeWidth, 1);
-  context.fill();
-  context.restore();
+  this._gethit = true;
+    var context = this.getHitDetectionImage().getContext('2d');
+    context.save();
+    context.setTransform(1,0,0,1,0,0)
+    this.drawBack_(context, "#000", strokeWidth, 1);
+    context.fill();
+    context.restore();
+  this._gethit = false;
   // Draw the image
   context = canvas.getContext('2d');
   context.save();
@@ -38508,31 +38814,32 @@ ol.style.Photo.prototype.renderPhoto_ = function(pixelratio) {
   img.src = this._src;
   // Draw image
   if (img.width) {
-    self.drawImage_(img);
+    self.drawImage_(canvas, img, pixelratio);
   } else {
     img.onload = function() {
-      self.drawImage_(img);
+      self.drawImage_(canvas, img, pixelratio);
       // Force change (?!)
       // self.setScale(1);
       if (self._onload) self._onload();
     };
   }
-  // Set anchor
-  var a = this.getAnchor();
-  a[0] = (canvas.width/pixelratio - this._shadow)/2  - this._offset[0];
-  if (this.sanchor_) {
-    a[1] = canvas.height/pixelratio - this._shadow - this._offset[1];
-  } else {
-    a[1] = (canvas.height/pixelratio - this._shadow)/2 - this._offset[1];
+  // Set anchor (ol < 6)
+  if (!this.getDisplacement) {
+    var a = this.getAnchor();
+    a[0] = (canvas.width/pixelratio - this._shadow)/2  - this._offset[0];
+    if (this.sanchor_) {
+      a[1] = canvas.height/pixelratio - this._shadow - this._offset[1];
+    } else {
+      a[1] = (canvas.height/pixelratio - this._shadow)/2 - this._offset[1];
+    }
   }
+  return canvas;
 };
 /**
  * Draw an timage when loaded
  * @private
  */
-ol.style.Photo.prototype.drawImage_ = function(img) {
-  var pixelratio = window.devicePixelRatio;
-  var canvas = this.getImage(pixelratio);
+ol.style.Photo.prototype.drawImage_ = function(canvas, img, pixelratio) {
   // Remove the circle on the canvas
   var context = (canvas.getContext('2d'));
   var strokeWidth = 0;
@@ -38685,7 +38992,7 @@ ol.style.Profile.prototype._renderLine = function(geom, g, l, e) {
   ctx.save();
     ctx.fillStyle = ol.color.asString(this.getFill().getColor());
     ctx.strokeStyle = ol.color.asString(this.getStroke().getColor());
-    ctx.strokeWidth = this.getStroke().getWidth();
+    ctx.lineWidth = this.getStroke().getWidth();
     var p0 = geom[0];
     var ez = this.getScale() * e.pixelRatio;
     for (i=1; p=geom[i]; i++) {
@@ -38935,20 +39242,26 @@ CanvasRenderingContext2D.prototype.textPath = function (text, path)
  *  @param {ol.style.Fill | undefined} options.fill fill style, default rgba(0,0,0,0.5)
  *  @param {number} options.radius point radius
  * 	@param {number} options.blur lur radius, default radius/3
- * 	@param {number} options.offsetX x offset, default 0
- * 	@param {number} options.offsetY y offset, default 0
+ *  @param {Array<number>} [options.displacement] to use with ol > 6
+ * 	@param {number} [options.offsetX=0] Horizontal offset in pixels, deprecated use displacement with ol>6
+ * 	@param {number} [options.offsetY=0] Vertical offset in pixels, deprecated use displacement with ol>6
  * @extends {ol.style.RegularShape}
  * @api
  */
 ol.style.Shadow = function(options) {
   options = options || {};
-  if (!options.fill) options.fill = new ol.style.Fill({ color: "rgba(0,0,0,0.5)" });
-  ol.style.RegularShape.call (this,{ radius: options.radius, fill: options.fill });
-  this._fill = options.fill;
+  this._fill = options.fill || new ol.style.Fill({ color: "rgba(0,0,0,0.5)" });
   this._radius = options.radius;
   this._blur = options.blur===0 ? 0 : options.blur || options.radius/3;
   this._offset = [options.offsetX ? options.offsetX : 0, options.offsetY ? options.offsetY : 0];
-  this.renderShadow_();
+  if (!options.displacement) options.displacement = [options.offsetX || 0, -options.offsetY || 0];
+  ol.style.RegularShape.call (this, { 
+    radius: options.radius, 
+    fill: options.fill,
+    displacement: options.displacement
+  });
+  // ol < 6
+  if (!this.setDisplacement) this.getImage();
 };
 ol.ext.inherits(ol.style.Shadow, ol.style.RegularShape);
 /**
@@ -38968,21 +39281,15 @@ ol.style.Shadow.prototype.clone = function() {
   return s;
 };
 /**
- * @private
+ * Get the image icon.
+ * @param {number} pixelRatio Pixel ratio.
+ * @return {HTMLCanvasElement} Image or Canvas element.
+ * @api
  */
-ol.style.Shadow.prototype.renderShadow_ = function(pixelratio) {	
-  if (!pixelratio) {
-    if (this.getPixelRatio) {
-      pixelratio = window.devicePixelRatio;
-      this.renderShadow_(pixelratio);
-      if (this.getPixelRatio && pixelratio!==1) this.renderShadow_(1); 
-    } else {
-      this.renderShadow_(1);
-    }
-    return;
-  }
+ol.style.Shadow.prototype.getImage = function(pixelratio) {
+  pixelratio = pixelratio || 1;
   var radius = this._radius;
-  var canvas = this.getImage(pixelratio);
+  var canvas = ol.style.RegularShape.prototype.getImage.call(this, pixelratio);
   // Remove the circle on the canvas
   var context = (canvas.getContext('2d'));
   context.clearRect(0, 0, canvas.width, canvas.height);
@@ -38990,20 +39297,23 @@ ol.style.Shadow.prototype.renderShadow_ = function(pixelratio) {
   context.beginPath();
     context.setTransform(pixelratio, 0, 0, pixelratio, 0, 0);
     context.scale(1,0.5);
-    context.arc(radius, -radius, radius-this._blur, 0, 2 * Math.PI, false);
+    context.arc(radius, -radius, radius - this._blur, 0, 2 * Math.PI, false);
     context.fillStyle = '#000';
     context.shadowColor = this._fill.getColor();
-    context.shadowBlur = 0.7*this._blur*pixelratio;
+    context.shadowBlur = 0.7 * this._blur * pixelratio;
     context.shadowOffsetX = 0;
-    context.shadowOffsetY = 1.5*radius*pixelratio;
+    context.shadowOffsetY = 1.5 * radius * pixelratio;
   context.closePath();
   context.fill();
   context.shadowColor = 'transparent';
   context.restore();
   // Set anchor
-  var a = this.getAnchor();
-  a[0] = canvas.width /2 - this._offset[0];
-  a[1] = canvas.height /2 - this._offset[1];
+  if (!this.getDisplacement) {
+    var a = this.getAnchor();
+    a[0] = canvas.width /2 - this._offset[0];
+    a[1] = canvas.height /2 - this._offset[1];
+  }
+  return canvas;
 }
 
 /*	Copyright (c) 2018 Jean-Marc VIGLINO, 
