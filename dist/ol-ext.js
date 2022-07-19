@@ -28147,6 +28147,16 @@ ol.interaction.UndoRedo.prototype._handleDo = function(e, undo) {
       case 'changegeometry': {
         var geom = e.feature.getGeometry();
         e.feature.setGeometry(e.oldGeom);
+        Object.keys(geom.listeners_).forEach((key) => {
+          var featureGeometry = e.feature.getGeometry();
+          geom.listeners_[key].forEach((listener) => {
+            if(!(key in featureGeometry.listeners_) ||
+              !(featureGeometry.listeners_[key].includes(listener))
+            ){
+              featureGeometry.on(key, listener);
+            }
+          });
+        })
         e.oldGeom = geom;
         break;
       }
