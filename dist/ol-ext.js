@@ -28217,6 +28217,8 @@ ol.interaction.Transform = class olinteractionTransform extends ol.interaction.P
     this.set('stretch', (options.stretch !== false))
     /* Can scale the feature */
     this.set('scale', (options.scale !== false))
+    /* NG: Display non-interactive scale handles */
+    this.set('scale_n', (options.scale_n !== false))
     /* Can rotate the feature */
     this.set('rotate', (options.rotate !== false))
     /* Keep aspect ratio */
@@ -28527,6 +28529,12 @@ ol.interaction.Transform = class olinteractionTransform extends ol.interaction.P
         if (this.get('scale'))
           for (i = 0; i < g.length - 1; i++) {
             f = new ol.Feature({ geometry: new ol.geom.Point(g[i]), handle: 'scale', option: i })
+            features.push(f)
+          }
+        // NG: Add non-interactive scale handles
+        else if (this.get('scale_n'))
+          for (i = 0; i < g.length - 1; i++) {
+            f = new ol.Feature({ geometry: new ol.geom.Point(g[i]), handle: 'scale_n', option: i })
             features.push(f)
           }
         // Center
