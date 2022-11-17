@@ -64,8 +64,12 @@ var ol_interaction_Transform = class olinteractionTransform extends ol_interacti
       name: 'Transform overlay',
       displayInLayerSwitcher: false,
       // Return the style according to the handle type
-      style: function (feature) {
-        return (self.style[(feature.get('handle') || 'default') + (feature.get('constraint') || '') + (feature.get('option') || '')])
+      style: function (feature, resolution) {
+        const style = self.style[(feature.get('handle') || 'default') + (feature.get('constraint') || '') + (feature.get('option') || '')]
+        if (typeof style === 'function'){
+          return style(feature, resolution)
+        }
+        return style
       },
     })
 

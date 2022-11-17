@@ -28194,8 +28194,12 @@ ol.interaction.Transform = class olinteractionTransform extends ol.interaction.P
       name: 'Transform overlay',
       displayInLayerSwitcher: false,
       // Return the style according to the handle type
-      style: function (feature) {
-        return (self.style[(feature.get('handle') || 'default') + (feature.get('constraint') || '') + (feature.get('option') || '')])
+      style: function (feature, resolution) {
+        var style = self.style[(feature.get('handle') || 'default') + (feature.get('constraint') || '') + (feature.get('option') || '')]
+        if (typeof style === 'function'){
+          return style(feature, resolution)
+        }
+        return style
       },
     })
     // Collection of feature to transform

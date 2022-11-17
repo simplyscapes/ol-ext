@@ -1,6 +1,6 @@
 {
   "name": "ol-ext",
-  "version": "4.0.2a",
+  "version": "4.0.2",
   "description": "A set of cool extensions for OpenLayers (ol) in node modules structure",
   "main": "dist/ol-ext.js",
   "style": "dist/ol-ext.css",
@@ -67,7 +67,7 @@
     "toolbar",
     "animation"
   ],
-  "type": "module",
+  "type": "commonjs",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Viglino/ol-ext.git"
